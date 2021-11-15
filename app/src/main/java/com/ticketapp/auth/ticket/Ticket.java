@@ -83,22 +83,12 @@ public class Ticket {
         }
 
         // Example of writing:
-        byte[] message = "nice".getBytes();
-        /**
-         * writePages:
-         * Write input byte array on card
-         *
-         * @param srcBuffer     byte array
-         * @param srcPos        starting point of data to write
-         * @param startPage     first page on card to write data
-         * @param numberOfPages how many pages to write
-         * @return boolean value of success
-         */
-        res = utils.writePages(message, 0, 6, 1);
+        String message = "test";
+        res = writePage(6, message); //utils.writePages(message, 0, 6, 1);
 
         // Set information to show for the user
         if (res) {
-            infoToShow = "Wrote: " + new String(message);
+            infoToShow = "Wrote: " + message;
         } else {
             infoToShow = "Failed to write";
         }
@@ -125,17 +115,7 @@ public class Ticket {
 
         // Example of reading:
         byte[] message = new byte[4];
-        /**
-         * readPages:
-         * Read card memory from starting page for defined amount of pages
-         *
-         * @param startPage            start page of read
-         * @param numberOfPages        how many pages to read
-         * @param destination          where to store received data
-         * @param destinationStartByte at what point to store received data
-         * @return boolean value of success
-         */
-        res = utils.readPages(6, 1, message, 0);
+        res =  readPage(6, message);
 
         // Set information to show for the user
         if (res) {
@@ -145,5 +125,39 @@ public class Ticket {
         }
 
         return true;
+    }
+
+    /**
+     * CUSTOM IMPLEMENTATION BELOW
+     */
+    private byte[] intToPage(int Int) {
+        return String.format("%04d", Int).getBytes();
+    }
+
+    private int pageToInt(byte[] page) {
+        return Integer.parseInt(page.toString());
+    }
+
+    /**
+     * Write one page
+     *
+     * @param page      page number
+     * @param message   message to write
+     * @return boolean value of success
+     */
+    private boolean writePage(int page, String message) {
+        assert message.length() == 4: "Page length must be 4";
+        return utils.writePages(message.getBytes(), 0, page, 1);
+    }
+
+    /**
+     * Read one page
+     *
+     * @param page      page number
+     * @param message   message to read
+     * @return boolean value of success
+     */
+    private boolean readPage(int page, byte[] message) {
+        return utils.readPages(page, 1, message, 0);
     }
 }
