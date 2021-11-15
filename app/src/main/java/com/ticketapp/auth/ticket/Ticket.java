@@ -71,6 +71,7 @@ public class Ticket {
      * TODO: IMPLEMENT
      */
     public boolean issue(int daysValid, int uses) throws GeneralSecurityException {
+        Utilities.log("Normal Mode, Issue: issue()", true);
         boolean res;
 
         // Authenticate
@@ -82,7 +83,17 @@ public class Ticket {
         }
 
         // Example of writing:
-        byte[] message = "info".getBytes();
+        byte[] message = "nice".getBytes();
+        /**
+         * writePages:
+         * Write input byte array on card
+         *
+         * @param srcBuffer     byte array
+         * @param srcPos        starting point of data to write
+         * @param startPage     first page on card to write data
+         * @param numberOfPages how many pages to write
+         * @return boolean value of success
+         */
         res = utils.writePages(message, 0, 6, 1);
 
         // Set information to show for the user
@@ -101,6 +112,7 @@ public class Ticket {
      * TODO: IMPLEMENT
      */
     public boolean use() throws GeneralSecurityException {
+        Utilities.log("Normal Mode, Validate: use()", true);
         boolean res;
 
         // Authenticate
@@ -113,6 +125,16 @@ public class Ticket {
 
         // Example of reading:
         byte[] message = new byte[4];
+        /**
+         * readPages:
+         * Read card memory from starting page for defined amount of pages
+         *
+         * @param startPage            start page of read
+         * @param numberOfPages        how many pages to read
+         * @param destination          where to store received data
+         * @param destinationStartByte at what point to store received data
+         * @return boolean value of success
+         */
         res = utils.readPages(6, 1, message, 0);
 
         // Set information to show for the user
