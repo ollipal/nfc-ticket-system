@@ -14,6 +14,11 @@ import java.security.GeneralSecurityException;
  * you code readable and write clarifying comments when necessary.
  */
 public class Ticket {
+    /** CUSTOM CONSTANTS */
+    private final int LEFT_PAGE_TITLE = 6;
+    private final int LEFT_PAGE_AMOUNT = 7;
+    private final int ISSUE_AMOUNT = 5;
+    private final String LEFT_TITLE = "left";
 
     /** Default keys are stored in res/values/secrets.xml **/
     private static final byte[] defaultAuthenticationKey = TicketActivity.outer.getString(R.string.default_auth_key).getBytes();
@@ -82,17 +87,68 @@ public class Ticket {
             return false;
         }
 
-        // Example of writing:
-        String message = "test";
-        res = writePage(6, message); //utils.writePages(message, 0, 6, 1);
-
-        // Set information to show for the user
-        if (res) {
-            infoToShow = "Wrote: " + message;
-        } else {
-            infoToShow = "Failed to write";
+        // Add left title if needed
+        byte[] titleBytes = new byte[4];
+        res = utils.readPages(LEFT_PAGE_TITLE, 1, titleBytes, 0);
+        if (!res) {
+            Utilities.log("Left title reading failed", true);
+            infoToShow = "Reading failed";
+            return false;
+        }
+        if (!(new String(titleBytes)).equals(LEFT_TITLE)) {
+            // Write left title
+            res = writeString(LEFT_PAGE_TITLE, LEFT_TITLE);
+            if (!res) {
+                Utilities.log("Left title writing failed", true);
+                infoToShow = "Writing failed";
+                return false;
+            }
         }
 
+        // Set amount to 0 if no value
+        byte[] amountBytes = new byte[4];
+        //res = readPage(LEFT_PAGE_AMOUNT, amountBytes); // TODO why not work?
+        res = utils.readPages(LEFT_PAGE_AMOUNT, 1, amountBytes, 0);
+        if (!res) {
+            Utilities.log("Reading amount failed", true);
+            infoToShow = "Reading failed";
+            return false;
+        }
+        try {
+            pageToInt(amountBytes);
+        } catch(java.lang.NumberFormatException e) {
+            // Write initial amount of 0
+            res = writeString(LEFT_PAGE_AMOUNT, "0000");
+            if (!res) {
+                Utilities.log("Initial amount writing failed", true);
+                infoToShow = "Writing failed";
+                return false;
+            }
+        }
+
+
+        // Get current amount
+        amountBytes = new byte[4];
+        //res = readPage(LEFT_PAGE_AMOUNT, amountBytes); // TODO why not work?
+        res = utils.readPages(LEFT_PAGE_AMOUNT, 1, amountBytes, 0);
+        if (!res) {
+            Utilities.log("Reading amount failed", true);
+            infoToShow = "Reading failed";
+            return false;
+        }
+        int currentAmount = pageToInt(amountBytes);
+
+        // Issue new
+        res = writePage(LEFT_PAGE_AMOUNT, intToPage(currentAmount + ISSUE_AMOUNT));
+        if (!res) {
+            Utilities.log("Left amount writing failed", true);
+            infoToShow = "Writing failed";
+            return false;
+        }
+
+        // Show success
+        infoToShow = "Issue success!";
+        Utilities.log("Issue success!", true);
         return true;
     }
 
@@ -113,29 +169,68 @@ public class Ticket {
             return false;
         }
 
-        // Example of reading:
-        byte[] message = new byte[4];
-        res =  readPage(6, message);
-
-        // Set information to show for the user
-        if (res) {
-            infoToShow = "Read: " + new String(message);
-        } else {
-            infoToShow = "Failed to read";
+        // Get current amount
+        byte[] amountBytes = new byte[4];
+        //res = readPage(LEFT_PAGE_AMOUNT, amountBytes); // TODO why not work?
+        res = utils.readPages(LEFT_PAGE_AMOUNT, 1, amountBytes, 0);
+        if (!res) {
+            Utilities.log("Reading amount failed", true);
+            infoToShow = "Reading failed";
+            return false;
+        }
+        int currentAmount;
+        try {
+            currentAmount = pageToInt(amountBytes);
+        } catch(java.lang.NumberFormatException e) {
+            // Write initial amount of 0
+            Utilities.log("Reading amount failed", true);
+            infoToShow = "Reading failed";
+            return false;
         }
 
+        // Validate
+        if (currentAmount < 1) {
+            infoToShow = "No uses left";
+            Utilities.log("No uses left", true);
+            return false;
+        }
+
+        // Use
+        res = writePage(LEFT_PAGE_AMOUNT, intToPage(currentAmount - 1));
+        if (!res) {
+            Utilities.log("Left amount writing failed", true);
+            infoToShow = "Writing failed";
+            return false;
+        }
+
+        // Show success
+        infoToShow = "Use success!";
+        Utilities.log("Use success!", true);
         return true;
     }
 
     /**
      * CUSTOM IMPLEMENTATION BELOW
      */
+
     private byte[] intToPage(int Int) {
         return String.format("%04d", Int).getBytes();
     }
 
     private int pageToInt(byte[] page) {
-        return Integer.parseInt(page.toString());
+        return Integer.parseInt(new String(page));
+    }
+
+    /**
+     * Write 4 character string to page
+     *
+     * @param page      page number
+     * @param message   message to write
+     * @return boolean value of success
+     */
+    private boolean writeString(int page, String message) {
+        assert message.length() == 4: "Page length must be 4";
+        return writePage(page, message.getBytes());
     }
 
     /**
@@ -145,9 +240,8 @@ public class Ticket {
      * @param message   message to write
      * @return boolean value of success
      */
-    private boolean writePage(int page, String message) {
-        assert message.length() == 4: "Page length must be 4";
-        return utils.writePages(message.getBytes(), 0, page, 1);
+    private boolean writePage(int page, byte[] message) {
+        return utils.writePages(message, 0, page, 1);
     }
 
     /**
