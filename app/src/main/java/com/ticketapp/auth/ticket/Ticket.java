@@ -34,8 +34,8 @@ public class Ticket {
     private static Utilities utils;
     private static Commands ul;
 
-    private final Boolean isValid = false;
-    private final int remainingUses = 0;
+    private Boolean isValid = false;
+    private int remainingUses = 0;
     private final int expiryTime = 0;
 
     private static String infoToShow = "-"; // Use this to show messages
@@ -51,24 +51,16 @@ public class Ticket {
     }
 
     /** After validation, get ticket status: was it valid or not? */
-    public boolean isValid() {
-        return isValid;
-    }
+    public boolean isValid() { return isValid; }
 
     /** After validation, get the number of remaining uses */
-    public int getRemainingUses() {
-        return remainingUses;
-    }
+    public int getRemainingUses() { return remainingUses; }
 
     /** After validation, get the expiry time */
-    public int getExpiryTime() {
-        return expiryTime;
-    }
+    public int getExpiryTime() { return expiryTime; }
 
     /** After validation/issuing, get information */
-    public static String getInfoToShow() {
-        return infoToShow;
-    }
+    public static String getInfoToShow() { return infoToShow; }
 
     /**
      * Issue new tickets
@@ -86,6 +78,9 @@ public class Ticket {
             infoToShow = "Authentication failed";
             return false;
         }
+
+        // Set validity to false initially
+        isValid = false;
 
         // Add left title if needed
         byte[] titleBytes = new byte[4];
@@ -146,6 +141,10 @@ public class Ticket {
             return false;
         }
 
+        // Write status
+        remainingUses = currentAmount + ISSUE_AMOUNT;
+        isValid = true;
+
         // Show success
         infoToShow = "Issue success!";
         Utilities.log("Issue success!", true);
@@ -168,6 +167,9 @@ public class Ticket {
             infoToShow = "Authentication failed";
             return false;
         }
+
+        // Set validity to false initially
+        isValid = false;
 
         // Get current amount
         byte[] amountBytes = new byte[4];
@@ -202,6 +204,10 @@ public class Ticket {
             infoToShow = "Writing failed";
             return false;
         }
+
+        // Write status
+        remainingUses = currentAmount - 1;
+        isValid = true;
 
         // Show success
         infoToShow = "Use success!";
