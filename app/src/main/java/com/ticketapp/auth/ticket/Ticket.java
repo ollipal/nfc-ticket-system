@@ -78,7 +78,7 @@ public class Ticket {
     public boolean issue(int daysValid, int uses) throws GeneralSecurityException {
         Utilities.log("issue()", true);
 
-        String currentFailMsg = "";
+        String currentFailMsg = ""; // This message will be shown/logged if the following method(s) fail
         boolean wasExpired;
         try { // NOTE: every method starting with 'try' can raise Exception
             // Authenticate
@@ -161,7 +161,7 @@ public class Ticket {
     public boolean use() throws GeneralSecurityException {
         Utilities.log("use()", true);
 
-        String currentFailMsg = "";
+        String currentFailMsg = ""; // This message will be shown/logged if the following method(s) fail
         try { // NOTE: every method starting with 'try' can raise Exception
             // Authenticate
             currentFailMsg = "Authentication failed";
