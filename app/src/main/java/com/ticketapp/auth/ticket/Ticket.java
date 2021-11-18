@@ -5,7 +5,10 @@ import com.ticketapp.auth.app.main.TicketActivity;
 import com.ticketapp.auth.app.ulctools.Commands;
 import com.ticketapp.auth.app.ulctools.Utilities;
 
+import java.math.BigInteger;
+import java.nio.ByteBuffer;
 import java.security.GeneralSecurityException;
+import java.util.Date;
 
 /**
  * TODO:
@@ -68,86 +71,49 @@ public class Ticket {
      * TODO: IMPLEMENT
      */
     public boolean issue(int daysValid, int uses) throws GeneralSecurityException {
-        Utilities.log("Normal Mode, Issue: issue()", true);
-        boolean res;
+        Utilities.log("issue()", true);
 
-        // Authenticate
-        res = utils.authenticate(authenticationKey);
-        if (!res) {
-            Utilities.log("Authentication failed in issue()", true);
-            infoToShow = "Authentication failed";
-            return false;
-        }
+        String currentFailMsg = "";
+        try { // NOTE: every method starting with 'try' can raise Exception
+            // Authenticate
+            currentFailMsg = "Authentication failed";
+            tryAuthenticate();
 
-        // Set validity to false initially
-        isValid = false;
-
-        // Add left title if needed
-        byte[] titleBytes = new byte[4];
-        res = utils.readPages(LEFT_PAGE_TITLE, 1, titleBytes, 0);
-        if (!res) {
-            Utilities.log("Left title reading failed", true);
-            infoToShow = "Reading failed";
-            return false;
-        }
-        if (!(new String(titleBytes)).equals(LEFT_TITLE)) {
-            // Write left title
-            res = writeString(LEFT_PAGE_TITLE, LEFT_TITLE);
-            if (!res) {
-                Utilities.log("Left title writing failed", true);
-                infoToShow = "Writing failed";
-                return false;
+            // Add "left" title if needed
+            currentFailMsg = "Left title reading failed";
+            String leftTitle = tryReadPage(LEFT_PAGE_TITLE);
+            if (!leftTitle.equals(LEFT_TITLE)) {
+                currentFailMsg = "Left title writing failed";
+                tryWritePage(LEFT_PAGE_TITLE, LEFT_TITLE);
             }
-        }
 
-        // Set amount to 0 if no value
-        byte[] amountBytes = new byte[4];
-        //res = readPage(LEFT_PAGE_AMOUNT, amountBytes); // TODO why not work?
-        res = utils.readPages(LEFT_PAGE_AMOUNT, 1, amountBytes, 0);
-        if (!res) {
-            Utilities.log("Reading amount failed", true);
-            infoToShow = "Reading failed";
-            return false;
-        }
-        try {
-            pageToInt(amountBytes);
-        } catch(java.lang.NumberFormatException e) {
-            // Write initial amount of 0
-            res = writeString(LEFT_PAGE_AMOUNT, "0000");
-            if (!res) {
-                Utilities.log("Initial amount writing failed", true);
-                infoToShow = "Writing failed";
-                return false;
+            // Read how many uses left, initialize with 0 if not set
+            currentFailMsg = "Reading left amount failed";
+            String leftAmountString = tryReadPage(LEFT_PAGE_AMOUNT);
+            int leftAmount;
+            try {
+                currentFailMsg = "Converting left amount failed";
+                leftAmount = tryStringToInt(leftAmountString);
+            } catch(java.lang.NumberFormatException e) {
+                currentFailMsg = "Initial left amount writing failed";
+                tryWritePage(LEFT_PAGE_AMOUNT, "0000");
+                leftAmount = 0;
             }
-        }
 
+            // Issue new
+            currentFailMsg = "Left amount writing failed";
+            int newAmount = leftAmount + ISSUE_AMOUNT;
+            tryWritePage(LEFT_PAGE_AMOUNT, intToPageString(newAmount));
 
-        // Get current amount
-        amountBytes = new byte[4];
-        //res = readPage(LEFT_PAGE_AMOUNT, amountBytes); // TODO why not work?
-        res = utils.readPages(LEFT_PAGE_AMOUNT, 1, amountBytes, 0);
-        if (!res) {
-            Utilities.log("Reading amount failed", true);
-            infoToShow = "Reading failed";
+            // Update state
+            remainingUses = newAmount;
+            isValid = true;
+        } catch (Exception e) {
+            logErrorAndInfo(currentFailMsg);
+            isValid = false;
             return false;
         }
-        int currentAmount = pageToInt(amountBytes);
-
-        // Issue new
-        res = writePage(LEFT_PAGE_AMOUNT, intToPage(currentAmount + ISSUE_AMOUNT));
-        if (!res) {
-            Utilities.log("Left amount writing failed", true);
-            infoToShow = "Writing failed";
-            return false;
-        }
-
-        // Write status
-        remainingUses = currentAmount + ISSUE_AMOUNT;
-        isValid = true;
-
-        // Show success
-        infoToShow = "Issue success!";
-        Utilities.log("Issue success!", true);
+        logErrorAndInfo("Issue success! Uses left:" + remainingUses);
         return true;
     }
 
@@ -157,61 +123,45 @@ public class Ticket {
      * TODO: IMPLEMENT
      */
     public boolean use() throws GeneralSecurityException {
-        Utilities.log("Normal Mode, Validate: use()", true);
-        boolean res;
+        Utilities.log("use()", true);
 
-        // Authenticate
-        res = utils.authenticate(authenticationKey);
-        if (!res) {
-            Utilities.log("Authentication failed in issue()", true);
-            infoToShow = "Authentication failed";
+        String currentFailMsg = "";
+        try { // NOTE: every method starting with 'try' can raise Exception
+            // Authenticate
+            currentFailMsg = "Authentication failed";
+            tryAuthenticate();
+
+            // Read how many uses left
+            currentFailMsg = "Reading left amount failed";
+            String leftAmountString = tryReadPage(LEFT_PAGE_AMOUNT);
+            int leftAmount;
+            try {
+                currentFailMsg = "Converting left amount failed";
+                leftAmount = tryStringToInt(leftAmountString);
+            } catch(java.lang.NumberFormatException e) {
+                throw new Exception("No left amount initialized, issue() first!");
+            }
+
+            // Validate
+            if (leftAmount < 1) {
+                currentFailMsg = "No uses left";
+                throw new Exception("not valid");
+            }
+
+            // Use
+            currentFailMsg = "Left amount writing failed";
+            int newAmount = leftAmount - 1;
+            tryWritePage(LEFT_PAGE_AMOUNT, intToPageString(newAmount));
+
+            // Update state
+            remainingUses = newAmount;
+            isValid = true;
+        } catch (Exception e) {
+            logErrorAndInfo(currentFailMsg);
+            isValid = false;
             return false;
         }
-
-        // Set validity to false initially
-        isValid = false;
-
-        // Get current amount
-        byte[] amountBytes = new byte[4];
-        //res = readPage(LEFT_PAGE_AMOUNT, amountBytes); // TODO why not work?
-        res = utils.readPages(LEFT_PAGE_AMOUNT, 1, amountBytes, 0);
-        if (!res) {
-            Utilities.log("Reading amount failed", true);
-            infoToShow = "Reading failed";
-            return false;
-        }
-        int currentAmount;
-        try {
-            currentAmount = pageToInt(amountBytes);
-        } catch(java.lang.NumberFormatException e) {
-            // Write initial amount of 0
-            Utilities.log("Reading amount failed", true);
-            infoToShow = "Reading failed";
-            return false;
-        }
-
-        // Validate
-        if (currentAmount < 1) {
-            infoToShow = "No uses left";
-            Utilities.log("No uses left", true);
-            return false;
-        }
-
-        // Use
-        res = writePage(LEFT_PAGE_AMOUNT, intToPage(currentAmount - 1));
-        if (!res) {
-            Utilities.log("Left amount writing failed", true);
-            infoToShow = "Writing failed";
-            return false;
-        }
-
-        // Write status
-        remainingUses = currentAmount - 1;
-        isValid = true;
-
-        // Show success
-        infoToShow = "Use success!";
-        Utilities.log("Use success!", true);
+        logErrorAndInfo("Success! Uses left: " + remainingUses);
         return true;
     }
 
@@ -219,24 +169,39 @@ public class Ticket {
      * CUSTOM IMPLEMENTATION BELOW
      */
 
-    private byte[] intToPage(int Int) {
-        return String.format("%04d", Int).getBytes();
+    private void tryAuthenticate() throws Exception {
+        if(!utils.authenticate(authenticationKey)){
+            throw new Exception("Auth failed");
+        }
     }
 
-    private int pageToInt(byte[] page) {
-        return Integer.parseInt(new String(page));
+    private String tryReadPage(int page) throws Exception {
+        byte[] pageBytes = new byte[4];
+        if(!utils.readPages(page, 1, pageBytes, 0)) {
+            throw new Exception("Page read failed");
+        }
+        return new String(pageBytes);
     }
 
-    /**
-     * Write 4 character string to page
-     *
-     * @param page      page number
-     * @param message   message to write
-     * @return boolean value of success
-     */
-    private boolean writeString(int page, String message) {
+    private void tryWritePage(int page, String message) throws Exception {
         assert message.length() == 4: "Page length must be 4";
-        return writePage(page, message.getBytes());
+        if(!writePage(page, message.getBytes())) {
+            throw new Exception("Page write failed");
+        }
+    }
+
+    private void logErrorAndInfo(String message) {
+        infoToShow = message;
+        Utilities.log(message, true);
+    }
+
+
+    private String intToPageString(int Int) {
+        return String.format("%04d", Int);
+    }
+
+    private int tryStringToInt(String page) {
+        return Integer.parseInt(page);
     }
 
     /**
@@ -248,16 +213,5 @@ public class Ticket {
      */
     private boolean writePage(int page, byte[] message) {
         return utils.writePages(message, 0, page, 1);
-    }
-
-    /**
-     * Read one page
-     *
-     * @param page      page number
-     * @param message   message to read
-     * @return boolean value of success
-     */
-    private boolean readPage(int page, byte[] message) {
-        return utils.readPages(page, 1, message, 0);
     }
 }
