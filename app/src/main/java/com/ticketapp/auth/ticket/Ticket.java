@@ -44,7 +44,7 @@ public class Ticket {
 
     private Boolean isValid = false;
     private int remainingUses = 0;
-    private final int expiryTime = 0;
+    private int expiryTime = 0;
 
     private static String infoToShow = "-"; // Use this to show messages
 
@@ -102,14 +102,14 @@ public class Ticket {
             }
 
             // Read how many uses left, initialize with 0 if not set
-            currentFailMsg = "Reading left amount failed";
+            currentFailMsg = "Reading ticket amount failed";
             String leftAmountString = tryReadPage(LEFT_AMOUNT_PAGE);
             int leftAmount;
             try {
-                currentFailMsg = "Converting left amount failed";
+                currentFailMsg = "Converting ticket amount failed";
                 leftAmount = tryStringToInt(leftAmountString);
             } catch(java.lang.NumberFormatException e) {
-                currentFailMsg = "Initial left amount writing failed";
+                currentFailMsg = "Initial ticket amount writing failed";
                 tryWritePage(LEFT_AMOUNT_PAGE, "0000");
                 leftAmount = 0;
             }
@@ -128,9 +128,10 @@ public class Ticket {
             // Reset expire
             currentFailMsg = "Expire date write failed";
             tryWritePage(EXPIRE_DATE_PAGE, EXPIRE_NOT_STARTED);
+            expiryTime = 0;
 
             // Issue new
-            currentFailMsg = "Left amount writing failed";
+            currentFailMsg = "Ticket amount writing failed";
             tryWritePage(LEFT_AMOUNT_PAGE, intToPageString(newAmount));
 
             // Update state
@@ -143,10 +144,10 @@ public class Ticket {
         }
 
         if (!wasExpired) {
-            logErrorAndInfo("Issue success! Uses left: " + remainingUses);
+            logErrorAndInfo("Issue success! " + remainingUses + " tickets left");
         } else {
             logErrorAndInfo(
-                    "Issue success! Uses left: " + remainingUses +
+                    "Issue success!  " + remainingUses + " tickets left" +
                     " (old tickets had expired or did not exist)"
             );
         }
@@ -168,11 +169,11 @@ public class Ticket {
             tryAuthenticate();
 
             // Read how many uses left
-            currentFailMsg = "Reading left amount failed";
+            currentFailMsg = "Reading ticket amount failed";
             String leftAmountString = tryReadPage(LEFT_AMOUNT_PAGE);
             int leftAmount;
             try {
-                currentFailMsg = "Converting left amount failed";
+                currentFailMsg = "Converting ticket amount failed";
                 leftAmount = tryStringToInt(leftAmountString);
             } catch(java.lang.NumberFormatException e) {
                 throw new Exception("No left amount initialized, issue() first!");
@@ -180,7 +181,7 @@ public class Ticket {
 
             // Validate
             if (leftAmount < 1) {
-                currentFailMsg = "No uses left";
+                currentFailMsg = "No tickets left";
                 throw new Exception("not valid");
             }
 
@@ -190,20 +191,22 @@ public class Ticket {
             byte[] exprBytes = tryReadBytes(EXPIRE_DATE_PAGE);
             if (hasExpired(exprBytes)) {
                 currentFailMsg = "Tickets expired";
+                expiryTime = bytesToInt(exprBytes);
                 throw new Exception("expired");
             }
 
-            // Start expire countdown if not started yet
+            // Start expire countdown if not started yet, update expiryTime
             if (!hasStarted(exprBytes)) {
                 currentFailMsg = "Expire write failed";
-                byte[] expireBytes = ByteBuffer.allocate(4).putInt(
-                        currentDateMinInt() + EXPIRE_TIME_MIN
-                ).array();
+                expiryTime = currentDateMinInt() + EXPIRE_TIME_MIN;
+                byte[] expireBytes = ByteBuffer.allocate(4).putInt(expiryTime).array();
                 tryWriteBytes(EXPIRE_DATE_PAGE, expireBytes);
+            } else {
+                expiryTime = bytesToInt(exprBytes);
             }
 
             // Use
-            currentFailMsg = "Left amount writing failed";
+            currentFailMsg = "Ticket amount writing failed";
             int newAmount = leftAmount - 1;
             tryWritePage(LEFT_AMOUNT_PAGE, intToPageString(newAmount));
 
@@ -215,7 +218,7 @@ public class Ticket {
             isValid = false;
             return false;
         }
-        logErrorAndInfo("Success! Uses left: " + remainingUses);
+        logErrorAndInfo("Success! " + remainingUses + " tickets left");
         return true;
     }
 
@@ -273,12 +276,15 @@ public class Ticket {
         return (int) ((new Date()).getTime() / 1000 / 60);
     }
 
+    private int bytesToInt(byte[] bytes) {
+        return new BigInteger(bytes).intValue();
+    }
+
     private boolean hasExpired(byte[] dateBytes) {
         if (!hasStarted(dateBytes)) {
             return false;
         }
-        int dateMinInt = new BigInteger(dateBytes).intValue();
-        return dateMinInt < currentDateMinInt();
+        return bytesToInt(dateBytes) < currentDateMinInt();
     }
 
     /**
