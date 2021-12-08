@@ -86,12 +86,10 @@ public class EmulatorFragment extends Fragment {
         if (active && Reader.connect()) {
             try {
                 int currentTime = (int) ((new Date()).getTime() / 1000 / 60);
+
                 //int uses = ticket.getRemainingUses();
                 //int expiryTime = ticket.getExpiryTime();
-
                 ticket.use();
-
-                // NOTE: these moved here as they get updated during use()...
                 int uses = ticket.getRemainingUses();
                 int expiryTime = ticket.getExpiryTime();
 

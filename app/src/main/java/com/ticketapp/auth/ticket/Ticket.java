@@ -19,12 +19,16 @@ import java.util.HashMap;
  */
 public class Ticket {
     /** CUSTOM CONSTANTS */
+    private final int VERSION_TITLE_PAGE = 4;
+    private final int VERSION_VALUE_PAGE = 5;
     private final int LAST_TITLE_PAGE = 6;
     private final int LAST_COUNTER_PAGE = 7;
     private final int EXPIRE_TITLE_PAGE = 8;
     private final int EXPIRE_DATE_PAGE = 9;
     private final int COUNT_PAGE = 41;
     private final byte[] COUNT_ADD_ONE =  {(byte)1, (byte)0x00, (byte)0x00, (byte)0x00}; // TODO test with blank card to make sure is a valid COMPATIBILITY WRITE
+    private final String VERSION_TITLE = "vers";
+    private final String VERSION_VALUE = "0001";
     private final String LEFT_TITLE = "last";
     private final String EXPIRE_TITLE = "expr";
     private final String EXPIRE_NOT_STARTED = "TBA-";
@@ -95,6 +99,20 @@ public class Ticket {
             writePage(43, new byte[] {(byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH1 to 0,0,0,0
 
             // Formatting:
+            // Add "vers" title if needed
+            currentFailMsg = "Version title reading failed";
+            String versionTitle = tryReadPage(VERSION_TITLE_PAGE);
+            if (!versionTitle.equals(VERSION_TITLE)) {
+                currentFailMsg = "Version title writing failed";
+                tryWritePage(VERSION_TITLE_PAGE, VERSION_TITLE);
+            }
+            // Add version value if needed
+            currentFailMsg = "Version value reading failed";
+            String versionValue = tryReadPage(VERSION_VALUE_PAGE);
+            if (!versionValue.equals(VERSION_VALUE)) {
+                currentFailMsg = "Version value writing failed";
+                tryWritePage(VERSION_VALUE_PAGE, VERSION_VALUE);
+            }
             // Add "last" title if needed
             currentFailMsg = "Last title reading failed";
             String leftTitle = tryReadPage(LAST_TITLE_PAGE);
@@ -185,7 +203,7 @@ public class Ticket {
             tryAuthenticate();
 
             // ENABLE DUMP AGAIN BY UNCOMMENTING, do not remove
-            //writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
+            writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
 
             // Get UID
             currentFailMsg = "UID getting failed";
