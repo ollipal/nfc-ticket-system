@@ -22,6 +22,8 @@ public class Ticket {
     private final int LEFT_AMOUNT_PAGE = 7;
     private final int EXPIRE_TITLE_PAGE = 8;
     private final int EXPIRE_DATE_PAGE = 9;
+    private final int COUNT_PAGE = 41;
+    private final byte[] COUNT_ADD_ONE =  {(byte)1, (byte)0x00, (byte)0x00, (byte)0x00}; // TODO test with blank card to make sure is a valid COMPATIBILITY WRITE
     private final String LEFT_TITLE = "left";
     private final String EXPIRE_TITLE = "expr";
     private final String EXPIRE_NOT_STARTED = "TBA-";
@@ -29,11 +31,11 @@ public class Ticket {
     private final int ISSUE_AMOUNT = 5;
 
     /** Default keys are stored in res/values/secrets.xml **/
-    private static final byte[] defaultAuthenticationKey = TicketActivity.outer.getString(R.string.default_auth_key).getBytes();
+    private static final byte[] defaultAuthenticationKey = TicketActivity.outer.getString(R.string.default_auth_key).getBytes(); // "saatananvittu".getBytes();
     private static final byte[] defaultHMACKey = TicketActivity.outer.getString(R.string.default_hmac_key).getBytes();
 
     /** TODO: Change these according to your design. Diversify the keys. */
-    private static final byte[] authenticationKey = defaultAuthenticationKey; // 16-byte key
+    private static final byte[] authenticationKey =  defaultAuthenticationKey; // 16-byte key
     private static final byte[] hmacKey = defaultHMACKey; // 16-byte key
 
     public static byte[] data = new byte[192];
@@ -159,13 +161,37 @@ public class Ticket {
      * TODO: IMPLEMENT
      */
     public boolean use() throws GeneralSecurityException {
-        Utilities.log("use()", true);
+        utils.log("use()", true);
+
+        // These set the read/write protection to all general + lock pages!
+        //writePage(42, new byte[] {(byte)3, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 03h,0,0,0
+        //writePage(43, new byte[] {(byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH1 to 0,0,0,0
+
+        /*
+            Replay protection TODO make online
+            key: UUID value: { issue, last counter value }
+         */
+
+        //Utilities.log(new String(macAlgorithm.generateMac("test".getBytes())), true);
 
         String currentFailMsg = ""; // This message will be shown/logged if the following method(s) fail
         try { // NOTE: every method starting with 'try' can raise Exception
             // Authenticate
             currentFailMsg = "Authentication failed";
             tryAuthenticate();
+
+            // ENABLE DUMP AGAIN
+            writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
+
+            // Get usage count
+            currentFailMsg = "Getting usage count failed";
+            byte[] countBytes = tryReadBytes(COUNT_PAGE);
+            byte[] actualCountBytes = {countBytes[1], countBytes[0]};
+            int count = bytesToInt(actualCountBytes);
+            utils.log("" + count, true);
+
+            // increase counter
+            writePage(COUNT_PAGE, COUNT_ADD_ONE);
 
             // Read how many uses left
             currentFailMsg = "Reading ticket amount failed";
@@ -285,6 +311,6 @@ public class Ticket {
 
     private void logErrorAndInfo(String message) {
         infoToShow = message;
-        Utilities.log(message, true);
+        utils.log(message, true);
     }
 }
