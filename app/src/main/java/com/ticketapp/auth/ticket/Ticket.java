@@ -9,6 +9,7 @@ import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.security.GeneralSecurityException;
 import java.util.Date;
+import java.util.HashMap;
 
 /**
  * TODO:
@@ -39,6 +40,8 @@ public class Ticket {
     private static final byte[] hmacKey = defaultHMACKey; // 16-byte key
 
     public static byte[] data = new byte[192];
+
+    private static HashMap<Integer, Integer> replayProtectionMap = new HashMap<Integer, Integer>();
 
     private static TicketMac macAlgorithm; // For computing HMAC over ticket data, as needed
     private static Utilities utils;
@@ -184,7 +187,12 @@ public class Ticket {
             // ENABLE DUMP AGAIN BY UNCOMMENTING, do not remove
             //writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
 
+            // Get UID
+            currentFailMsg = "UID getting failed";
+            int uid = tryGetUid();
+
             // Get usage count
+            currentFailMsg = "Getting count failed";
             int count = tryGetCount();
 
             // Read how many uses left
@@ -211,6 +219,18 @@ public class Ticket {
                 expiryTime = bytesToInt(exprBytes);
                 currentFailMsg = "Tickets expired";
                 throw new Exception("Tickets expired");
+            }
+
+            // Check if replay attack
+            currentFailMsg = "Getting count failed";
+            if (replayProtectionMap.get(uid) != null) {
+                if (replayProtectionMap.get(uid) == count) {
+                    currentFailMsg = "Replay attack detected";
+                    throw new Exception("Replay attack detected");
+                }
+            } else {
+                utils.log("Adding new UID to the replayProtectionMap", true);
+                replayProtectionMap.put(uid, count);
             }
 
             // Use
@@ -270,6 +290,19 @@ public class Ticket {
     private void tryWritePage(int page, String message) throws Exception {
         assert message.length() == 4: "Page length must be 4";
         tryWriteBytes(page, message.getBytes());
+    }
+
+    private int tryGetUid() throws Exception {
+        // read parts
+        byte[] uid1 = tryReadBytes(0);
+        byte[] uid2 = tryReadBytes(1);
+
+        // concat parts
+        byte[] uid = new byte[uid1.length + uid2.length];
+        System.arraycopy(uid1, 0, uid, 0, uid1.length);
+        System.arraycopy(uid2, 0, uid, uid1.length, uid2.length);
+
+        return bytesToInt(uid);
     }
 
     private int tryGetCount() throws Exception {
