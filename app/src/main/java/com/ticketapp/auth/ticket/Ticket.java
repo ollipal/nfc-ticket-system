@@ -18,13 +18,13 @@ import java.util.Date;
  */
 public class Ticket {
     /** CUSTOM CONSTANTS */
-    private final int LEFT_TITLE_PAGE = 6;
-    private final int LEFT_AMOUNT_PAGE = 7;
+    private final int LAST_TITLE_PAGE = 6;
+    private final int LAST_COUNTER_PAGE = 7;
     private final int EXPIRE_TITLE_PAGE = 8;
     private final int EXPIRE_DATE_PAGE = 9;
     private final int COUNT_PAGE = 41;
     private final byte[] COUNT_ADD_ONE =  {(byte)1, (byte)0x00, (byte)0x00, (byte)0x00}; // TODO test with blank card to make sure is a valid COMPATIBILITY WRITE
-    private final String LEFT_TITLE = "left";
+    private final String LEFT_TITLE = "last";
     private final String EXPIRE_TITLE = "expr";
     private final String EXPIRE_NOT_STARTED = "TBA-";
     private final int EXPIRE_TIME_MIN = 1;
@@ -87,13 +87,17 @@ public class Ticket {
             currentFailMsg = "Authentication failed";
             tryAuthenticate();
 
+            // These set the read/write protection to all general + lock pages!
+            writePage(42, new byte[] {(byte)3, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 03h,0,0,0
+            writePage(43, new byte[] {(byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH1 to 0,0,0,0
+
             // Formatting:
-            // Add "left" title if needed
-            currentFailMsg = "Left title reading failed";
-            String leftTitle = tryReadPage(LEFT_TITLE_PAGE);
+            // Add "last" title if needed
+            currentFailMsg = "Last title reading failed";
+            String leftTitle = tryReadPage(LAST_TITLE_PAGE);
             if (!leftTitle.equals(LEFT_TITLE)) {
-                currentFailMsg = "Left title writing failed";
-                tryWritePage(LEFT_TITLE_PAGE, LEFT_TITLE);
+                currentFailMsg = "Last title writing failed";
+                tryWritePage(LAST_TITLE_PAGE, LEFT_TITLE);
             }
             // Add "expr" title if needed
             currentFailMsg = "Expire title reading failed";
@@ -103,27 +107,28 @@ public class Ticket {
                 tryWritePage(EXPIRE_TITLE_PAGE, EXPIRE_TITLE);
             }
 
-            // Read how many uses left, initialize with 0 if not set
-            currentFailMsg = "Reading ticket amount failed";
-            String leftAmountString = tryReadPage(LEFT_AMOUNT_PAGE);
-            int leftAmount;
-            try {
-                leftAmount = Integer.parseInt(leftAmountString);
-            } catch(java.lang.NumberFormatException e) {
-                leftAmount = 0;
-                currentFailMsg = "Initial ticket amount writing failed";
-                tryWritePage(LEFT_AMOUNT_PAGE, "0000");
-            }
-
             // Calculate new amount based on if expired or not
             currentFailMsg = "Expire read failed";
+            wasExpired = hasExpired(tryReadBytes(EXPIRE_DATE_PAGE));
+
+            // Get usage count
+            currentFailMsg = "Counter reading failed";
+            int count = tryGetCount();
+
+            // Calculate how many tickets left, save the valid unused ones
+            currentFailMsg = "Reading last valid ticket failed";
+            String lastTicketString = tryReadPage(LAST_COUNTER_PAGE);
+            int lastTicket;
             int newAmount;
-            if (hasExpired(tryReadBytes(EXPIRE_DATE_PAGE))) {
+            try {
+                lastTicket = Integer.parseInt(lastTicketString);
+                if (!wasExpired && lastTicket > count) {
+                    newAmount = ISSUE_AMOUNT + lastTicket - count;
+                } else {
+                    newAmount = ISSUE_AMOUNT;
+                }
+            } catch(java.lang.NumberFormatException e) {
                 newAmount = ISSUE_AMOUNT;
-                wasExpired = true;
-            } else {
-                newAmount = leftAmount + ISSUE_AMOUNT;
-                wasExpired = false;
             }
 
             // Reset expire
@@ -132,7 +137,7 @@ public class Ticket {
 
             // Issue new
             currentFailMsg = "Ticket amount writing failed";
-            tryWritePage(LEFT_AMOUNT_PAGE, intToPageString(newAmount));
+            tryWritePage(LAST_COUNTER_PAGE, intToPageString(count + newAmount));
 
             // Update state
             remainingUses = newAmount;
@@ -163,10 +168,6 @@ public class Ticket {
     public boolean use() throws GeneralSecurityException {
         utils.log("use()", true);
 
-        // These set the read/write protection to all general + lock pages!
-        //writePage(42, new byte[] {(byte)3, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 03h,0,0,0
-        //writePage(43, new byte[] {(byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH1 to 0,0,0,0
-
         /*
             Replay protection TODO make online
             key: UUID value: { issue, last counter value }
@@ -180,32 +181,25 @@ public class Ticket {
             currentFailMsg = "Authentication failed";
             tryAuthenticate();
 
-            // ENABLE DUMP AGAIN
-            writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
+            // ENABLE DUMP AGAIN BY UNCOMMENTING, do not remove
+            //writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
 
             // Get usage count
-            currentFailMsg = "Getting usage count failed";
-            byte[] countBytes = tryReadBytes(COUNT_PAGE);
-            byte[] actualCountBytes = {countBytes[1], countBytes[0]};
-            int count = bytesToInt(actualCountBytes);
-            utils.log("" + count, true);
-
-            // increase counter
-            writePage(COUNT_PAGE, COUNT_ADD_ONE);
+            int count = tryGetCount();
 
             // Read how many uses left
             currentFailMsg = "Reading ticket amount failed";
-            String leftAmountString = tryReadPage(LEFT_AMOUNT_PAGE);
-            int leftAmount;
+            String lastTicketString = tryReadPage(LAST_COUNTER_PAGE);
+            int lastTicket;
             try {
-                leftAmount = Integer.parseInt(leftAmountString);
+                lastTicket = Integer.parseInt(lastTicketString);
             } catch(java.lang.NumberFormatException e) {
                 currentFailMsg = "Converting ticket amount failed";
                 throw new Exception("Converting ticket amount failed");
             }
 
             // Validate
-            if (leftAmount < 1) {
+            if (lastTicket - count < 1) {
                 currentFailMsg = "No tickets left";
                 throw new Exception("No tickets left");
             }
@@ -219,6 +213,11 @@ public class Ticket {
                 throw new Exception("Tickets expired");
             }
 
+            // Use
+            int newAmount = lastTicket - count - 1;
+            currentFailMsg = "Ticket counter increment failed";
+            tryIncrementCount();
+
             // Start expire countdown if not started yet, update expiryTime
             if (!hasStarted(exprBytes)) {
                 currentFailMsg = "Expire write failed";
@@ -227,11 +226,6 @@ public class Ticket {
             } else {
                 expiryTime = bytesToInt(exprBytes);
             }
-
-            // Use
-            int newAmount = leftAmount - 1;
-            currentFailMsg = "Ticket amount writing failed";
-            tryWritePage(LEFT_AMOUNT_PAGE, intToPageString(newAmount));
 
             // Update state
             remainingUses = newAmount;
@@ -276,6 +270,16 @@ public class Ticket {
     private void tryWritePage(int page, String message) throws Exception {
         assert message.length() == 4: "Page length must be 4";
         tryWriteBytes(page, message.getBytes());
+    }
+
+    private int tryGetCount() throws Exception {
+        byte[] countBytes = tryReadBytes(COUNT_PAGE);
+        byte[] actualCountBytes = {countBytes[1], countBytes[0]};
+        return bytesToInt(actualCountBytes);
+    }
+
+    private void tryIncrementCount() throws Exception {
+        tryWriteBytes(COUNT_PAGE, COUNT_ADD_ONE);
     }
 
     private int bytesToInt(byte[] bytes) {
