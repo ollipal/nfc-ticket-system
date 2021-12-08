@@ -8,6 +8,7 @@ import com.ticketapp.auth.app.ulctools.Utilities;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.security.GeneralSecurityException;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 
@@ -19,19 +20,22 @@ import java.util.HashMap;
  */
 public class Ticket {
     /** CUSTOM CONSTANTS */
-    private final int VERSION_TITLE_PAGE = 4;
-    private final int VERSION_VALUE_PAGE = 5;
-    private final int LAST_TITLE_PAGE = 6;
-    private final int LAST_COUNTER_PAGE = 7;
-    private final int EXPIRE_TITLE_PAGE = 8;
-    private final int EXPIRE_DATE_PAGE = 9;
+    private final int VERSION_TITLE_PAGE = 3;
+    private final int VERSION_VALUE_PAGE = 4;
+    private final int LAST_TITLE_PAGE = 5;
+    private final int LAST_COUNTER_PAGE = 6;
+    private final int EXPIRE_TITLE_PAGE = 7;
+    private final int EXPIRE_DATE_PAGE = 8;
+    private final int HMAC_TITLE_PAGE = 9;
+    private final int HMAC_VALUE_PAGE = 10;
     private final int COUNT_PAGE = 41;
     private final byte[] COUNT_ADD_ONE =  {(byte)1, (byte)0x00, (byte)0x00, (byte)0x00}; // TODO test with blank card to make sure is a valid COMPATIBILITY WRITE
-    private final String VERSION_TITLE = "vers";
+    private final String VERSION_TITLE = "VERS";
     private final String VERSION_VALUE = "0001";
-    private final String LEFT_TITLE = "last";
-    private final String EXPIRE_TITLE = "expr";
-    private final String EXPIRE_NOT_STARTED = "TBA-";
+    private final String LEFT_TITLE = "LAST";
+    private final String EXPIRE_TITLE = "EXPR";
+    private final String EXPIRE_NOT_STARTED = "tba-";
+    private final String HMAC_TITLE = "HMAC";
     private final int EXPIRE_TIME_MIN = 1;
     private final int ISSUE_AMOUNT = 5;
 
@@ -127,6 +131,17 @@ public class Ticket {
                 currentFailMsg = "Expire title writing failed";
                 tryWritePage(EXPIRE_TITLE_PAGE, EXPIRE_TITLE);
             }
+            // Add "hmac" title if needed
+            currentFailMsg = "Hmac title reading failed";
+            String hmacTitle = tryReadPage(HMAC_TITLE_PAGE);
+            if (!hmacTitle.equals(HMAC_TITLE)) {
+                currentFailMsg = "Hmac title writing failed";
+                tryWritePage(HMAC_TITLE_PAGE, HMAC_TITLE);
+            }
+
+            // Get UID
+            currentFailMsg = "UID getting failed";
+            int uid = tryGetUid();
 
             // Calculate new amount based on if expired or not
             currentFailMsg = "Expire read failed";
@@ -157,8 +172,14 @@ public class Ticket {
             tryWritePage(EXPIRE_DATE_PAGE, EXPIRE_NOT_STARTED);
 
             // Issue new
+            String lastTicketStringNew = intToPageString(count + newAmount);
             currentFailMsg = "Ticket amount writing failed";
-            tryWritePage(LAST_COUNTER_PAGE, intToPageString(count + newAmount));
+            tryWritePage(LAST_COUNTER_PAGE, lastTicketStringNew);
+
+            // Save HMAC
+            byte[] hmac = calcHmac(lastTicketStringNew, uid);
+            currentFailMsg = "HMAC writing failed";
+            tryWriteBytes(HMAC_VALUE_PAGE, hmac);
 
             // Update state
             remainingUses = newAmount;
@@ -194,8 +215,6 @@ public class Ticket {
             key: UUID value: { issue, last counter value }
          */
 
-        //Utilities.log(new String(macAlgorithm.generateMac("test".getBytes())), true);
-
         String currentFailMsg = ""; // This message will be shown/logged if the following method(s) fail
         try { // NOTE: every method starting with 'try' can raise Exception
             // Authenticate
@@ -222,6 +241,14 @@ public class Ticket {
             } catch(java.lang.NumberFormatException e) {
                 currentFailMsg = "Converting ticket amount failed";
                 throw new Exception("Converting ticket amount failed");
+            }
+
+            // Verify HMAC
+            byte[] hmacStored = tryReadBytes(HMAC_VALUE_PAGE);
+            byte[] hmacCalc = calcHmac(lastTicketString, uid);
+            if(!Arrays.equals(hmacStored, hmacCalc)) {
+                currentFailMsg = "HMAC does not add up";
+                throw new Exception("HMAC does not add up");
             }
 
             // Validate
@@ -314,13 +341,17 @@ public class Ticket {
         // read parts
         byte[] uid1 = tryReadBytes(0);
         byte[] uid2 = tryReadBytes(1);
-
         // concat parts
-        byte[] uid = new byte[uid1.length + uid2.length];
-        System.arraycopy(uid1, 0, uid, 0, uid1.length);
-        System.arraycopy(uid2, 0, uid, uid1.length, uid2.length);
-
+        byte[] uid = byteConcat(uid1, uid2);
+        // to int and return
         return bytesToInt(uid);
+    }
+
+    private byte[] byteConcat(byte[] a, byte[] b) {
+        byte[] c = new byte[a.length + b.length];
+        System.arraycopy(a, 0, c, 0, a.length);
+        System.arraycopy(b, 0, c, a.length, b.length);
+        return c;
     }
 
     private int tryGetCount() throws Exception {
@@ -331,6 +362,13 @@ public class Ticket {
 
     private void tryIncrementCount() throws Exception {
         tryWriteBytes(COUNT_PAGE, COUNT_ADD_ONE);
+    }
+
+    private byte[] calcHmac(String lastCounter, int uid) {
+        byte[] hmacLong = macAlgorithm.generateMac(byteConcat(hmacKey, (lastCounter + VERSION_VALUE + uid).getBytes()));
+        byte[] hmac4bytes = new byte[4];
+        System.arraycopy(hmacLong, 0, hmac4bytes, 0, 4);
+        return hmac4bytes;
     }
 
     private int bytesToInt(byte[] bytes) {
