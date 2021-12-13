@@ -20,14 +20,14 @@ import java.util.HashMap;
  */
 public class Ticket {
     /** CUSTOM CONSTANTS */
-    private final int VERSION_TITLE_PAGE = 3;
-    private final int VERSION_VALUE_PAGE = 4;
-    private final int LAST_TITLE_PAGE = 5;
-    private final int LAST_COUNTER_PAGE = 6;
-    private final int EXPIRE_TITLE_PAGE = 7;
-    private final int EXPIRE_DATE_PAGE = 8;
-    private final int HMAC_TITLE_PAGE = 9;
-    private final int HMAC_VALUE_PAGE = 10;
+    private final int VERSION_TITLE_PAGE = 4;
+    private final int VERSION_VALUE_PAGE = 5;
+    private final int LAST_TITLE_PAGE = 6;
+    private final int LAST_COUNTER_PAGE = 7;
+    private final int EXPIRE_TITLE_PAGE = 8;
+    private final int EXPIRE_DATE_PAGE = 9;
+    private final int HMAC_TITLE_PAGE = 10;
+    private final int HMAC_VALUE_PAGE = 11;
     private final int COUNT_PAGE = 41;
     private final byte[] COUNT_ADD_ONE =  {(byte)1, (byte)0x00, (byte)0x00, (byte)0x00}; // TODO test with blank card to make sure is a valid COMPATIBILITY WRITE
     private final String VERSION_TITLE = "VERS";
@@ -210,11 +210,6 @@ public class Ticket {
     public boolean use() throws GeneralSecurityException {
         utils.log("use()", true);
 
-        /*
-            Replay protection TODO make online
-            key: UUID value: { issue, last counter value }
-         */
-
         String currentFailMsg = ""; // This message will be shown/logged if the following method(s) fail
         try { // NOTE: every method starting with 'try' can raise Exception
             // Authenticate
@@ -222,7 +217,7 @@ public class Ticket {
             tryAuthenticate();
 
             // ENABLE DUMP AGAIN BY UNCOMMENTING, do not remove
-            writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
+            //writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
 
             // Get UID
             currentFailMsg = "UID getting failed";
