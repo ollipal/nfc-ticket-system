@@ -211,6 +211,7 @@ public class Ticket {
         utils.log("use()", true);
 
         String currentFailMsg = ""; // This message will be shown/logged if the following method(s) fail
+        int minutesLeft = 0;
         try { // NOTE: every method starting with 'try' can raise Exception
             // Authenticate
             currentFailMsg = "Authentication failed";
@@ -260,6 +261,7 @@ public class Ticket {
                 currentFailMsg = "Tickets expired";
                 throw new Exception("Tickets expired");
             }
+            minutesLeft = bytesToInt(exprBytes) - currentDateMinInt();
 
             // Check if replay attack
             currentFailMsg = "Getting count failed";
@@ -295,7 +297,7 @@ public class Ticket {
             isValid = false;
             return false;
         }
-        logErrorAndInfo("Success! " + remainingUses + " tickets left");
+        logErrorAndInfo("Success! " + remainingUses + " tickets left, expires in " + (double) Math.round((minutesLeft / 60.0) * 100) / 100 + " hours");
         return true;
     }
 
