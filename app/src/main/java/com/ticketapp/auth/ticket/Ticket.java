@@ -22,20 +22,26 @@ public class Ticket {
     /** CUSTOM CONSTANTS */
     private final int VERSION_TITLE_PAGE = 4;
     private final int VERSION_VALUE_PAGE = 5;
-    private final int LAST_TITLE_PAGE = 6;
-    private final int LAST_COUNTER_PAGE = 7;
-    private final int EXPIRE_TITLE_PAGE = 8;
-    private final int EXPIRE_DATE_PAGE = 9;
-    private final int HMAC_TITLE_PAGE = 10;
-    private final int HMAC_VALUE_PAGE = 11;
+    private final int FIRST_TITLE_PAGE = 6;
+    private final int FIRST_COUNTER_PAGE = 7;
+    private final int LAST_TITLE_PAGE = 8;
+    private final int LAST_COUNTER_PAGE = 9;
+    private final int EXPIRE_TITLE_PAGE = 10;
+    private final int EXPIRE_DATE_PAGE = 11;
+    private final int HMAC_TITLE_PAGE = 12;
+    private final int HMAC_VALUE_PAGE = 13;
+    private final int HMAC2_TITLE_PAGE = 14;
+    private final int HMAC2_VALUE_PAGE = 15;
     private final int COUNT_PAGE = 41;
     private final byte[] COUNT_ADD_ONE =  {(byte)1, (byte)0x00, (byte)0x00, (byte)0x00}; // TODO test with blank card to make sure is a valid COMPATIBILITY WRITE
     private final String VERSION_TITLE = "VERS";
     private final String VERSION_VALUE = "0001";
+    private final String FIRST_TITLE = "FRST";
     private final String LEFT_TITLE = "LAST";
     private final String EXPIRE_TITLE = "EXPR";
     private final String EXPIRE_NOT_STARTED = "tba-";
     private final String HMAC_TITLE = "HMAC";
+    private final String HMAC2_TITLE = "HMA2";
     private final int EXPIRE_TIME_MIN = 1;
     private final int ISSUE_AMOUNT = 5;
 
@@ -135,6 +141,13 @@ public class Ticket {
                 currentFailMsg = "Version value writing failed";
                 tryWritePage(VERSION_VALUE_PAGE, VERSION_VALUE);
             }
+            // Add "frst" title if needed
+            currentFailMsg = "First title reading failed";
+            String firstTitle = tryReadPage(FIRST_TITLE_PAGE);
+            if (!firstTitle.equals(FIRST_TITLE)) {
+                currentFailMsg = "Last title writing failed";
+                tryWritePage(FIRST_TITLE_PAGE, FIRST_TITLE);
+            }
             // Add "last" title if needed
             currentFailMsg = "Last title reading failed";
             String leftTitle = tryReadPage(LAST_TITLE_PAGE);
@@ -155,6 +168,13 @@ public class Ticket {
             if (!hmacTitle.equals(HMAC_TITLE)) {
                 currentFailMsg = "Hmac title writing failed";
                 tryWritePage(HMAC_TITLE_PAGE, HMAC_TITLE);
+            }
+            // Add "hma2" title if needed
+            currentFailMsg = "Hmac2 title reading failed";
+            String hmac2Title = tryReadPage(HMAC2_TITLE_PAGE);
+            if (!hmac2Title.equals(HMAC2_TITLE)) {
+                currentFailMsg = "Hmac2 title writing failed";
+                tryWritePage(HMAC2_TITLE_PAGE, HMAC2_TITLE);
             }
 
             // Calculate new amount based on if expired or not
@@ -188,6 +208,7 @@ public class Ticket {
             // Issue new
             String lastTicketStringNew = intToPageString(count + newAmount);
             currentFailMsg = "Ticket amount writing failed";
+            tryWritePage(FIRST_COUNTER_PAGE, intToPageString(count));
             tryWritePage(LAST_COUNTER_PAGE, lastTicketStringNew);
 
             // Save HMAC
@@ -235,7 +256,7 @@ public class Ticket {
             tryAuthenticate(uid);
 
             // ENABLE DUMP AGAIN BY UNCOMMENTING, do not remove
-            //writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
+            writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
 
             // Get usage count
             currentFailMsg = "Getting count failed";
@@ -275,6 +296,37 @@ public class Ticket {
                 throw new Exception("Tickets expired");
             }
 
+            // Start expire countdown if not started yet
+            // If not, check that the counter value has not been altered
+            // and then update expiryTime
+            if (!hasStarted(exprBytes)) {
+                // Verify counter value is still the original
+                currentFailMsg = "First value reading failed";
+                int first = tryGetFirst();
+                if (first != count) {
+                    currentFailMsg = "Counter values do not add up";
+                    throw new Exception("Counter values do not add up");
+                }
+                // Get expiry time
+                expiryTime = currentDateMinInt() + EXPIRE_TIME_MIN;
+                // Write hmac2 based on the expiry
+                byte[] hmac2 = calcHmac2(lastTicketString, uid, expiryTime);
+                currentFailMsg = "HMAC2 writing failed";
+                tryWriteBytes(HMAC2_VALUE_PAGE, hmac2);
+                // Write expiry
+                currentFailMsg = "Expire write failed";
+                tryWriteBytes(EXPIRE_DATE_PAGE, intToBytes(expiryTime));
+            } else {
+                expiryTime = bytesToInt(exprBytes);
+                // Verify HMAC2
+                byte[] hmac2Stored = tryReadBytes(HMAC2_VALUE_PAGE);
+                byte[] hmac2Calc = calcHmac2(lastTicketString, uid, expiryTime);
+                if(!Arrays.equals(hmac2Stored, hmac2Calc)) {
+                    currentFailMsg = "HMAC2 does not add up";
+                    throw new Exception("HMAC2 does not add up");
+                }
+            }
+
             // Check if replay attack
             currentFailMsg = "Getting count failed";
             if (replayProtectionMap.get(uid) != null) {
@@ -291,15 +343,6 @@ public class Ticket {
             int newAmount = lastTicket - count - 1;
             currentFailMsg = "Ticket counter increment failed";
             tryIncrementCount();
-
-            // Start expire countdown if not started yet, update expiryTime
-            if (!hasStarted(exprBytes)) {
-                currentFailMsg = "Expire write failed";
-                expiryTime = currentDateMinInt() + EXPIRE_TIME_MIN;
-                tryWriteBytes(EXPIRE_DATE_PAGE, intToBytes(expiryTime));
-            } else {
-                expiryTime = bytesToInt(exprBytes);
-            }
 
             // Update state
             remainingUses = newAmount;
@@ -369,12 +412,28 @@ public class Ticket {
         return bytesToInt(actualCountBytes);
     }
 
+    private int tryGetFirst() throws Exception {
+        String firstTicketString = tryReadPage(FIRST_COUNTER_PAGE);
+        try {
+            return Integer.parseInt(firstTicketString);
+        } catch(java.lang.NumberFormatException e) {
+            throw new Exception("Getting first failed");
+        }
+    }
+
     private void tryIncrementCount() throws Exception {
         tryWriteBytes(COUNT_PAGE, COUNT_ADD_ONE);
     }
 
     private byte[] calcHmac(String lastCounter, int uid) {
         byte[] hmacLong = macAlgorithm.generateMac(byteConcat(calcKey(uid, hmacKey2), (lastCounter + VERSION_VALUE + uid).getBytes()));
+        byte[] hmac4bytes = new byte[4];
+        System.arraycopy(hmacLong, 0, hmac4bytes, 0, 4);
+        return hmac4bytes;
+    }
+
+    private byte[] calcHmac2(String lastCounter, int uid, int expiryTime) {
+        byte[] hmacLong = macAlgorithm.generateMac(byteConcat(calcKey(uid, hmacKey2), (lastCounter + VERSION_VALUE + uid + expiryTime).getBytes()));
         byte[] hmac4bytes = new byte[4];
         System.arraycopy(hmacLong, 0, hmac4bytes, 0, 4);
         return hmac4bytes;
