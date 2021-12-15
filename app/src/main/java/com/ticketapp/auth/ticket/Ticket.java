@@ -256,7 +256,7 @@ public class Ticket {
             tryAuthenticate(uid);
 
             // ENABLE DUMP AGAIN BY UNCOMMENTING, do not remove
-            writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
+            //writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
 
             // Get usage count
             currentFailMsg = "Getting count failed";
