@@ -40,12 +40,16 @@ public class Ticket {
     private final int ISSUE_AMOUNT = 5;
 
     /** Default keys are stored in res/values/secrets.xml **/
-    private static final byte[] defaultAuthenticationKey = TicketActivity.outer.getString(R.string.default_auth_key).getBytes(); // "saatananvittu".getBytes();
+    private static final byte[] defaultAuthenticationKey = TicketActivity.outer.getString(R.string.default_auth_key).getBytes();
     private static final byte[] defaultHMACKey = TicketActivity.outer.getString(R.string.default_hmac_key).getBytes();
 
     /** TODO: Change these according to your design. Diversify the keys. */
     private static final byte[] authenticationKey =  defaultAuthenticationKey; // 16-byte key
     private static final byte[] hmacKey = defaultHMACKey; // 16-byte key
+
+    // these are the new random keys, that are used in calcKey as input for the hash
+    private static final byte[] authenticationKey2 =  "4YUS2291X58HGZ8G".getBytes(); // 16-byte key
+    private static final byte[] hmacKey2 = "JH0SCT74YJYSXNUE".getBytes(); // 16-byte key
 
     public static byte[] data = new byte[192];
 
@@ -94,9 +98,23 @@ public class Ticket {
         String currentFailMsg = ""; // This message will be shown/logged if the following method(s) fail
         boolean wasExpired;
         try { // NOTE: every method starting with 'try' can raise Exception
+            // Get UID
+            currentFailMsg = "UID getting failed";
+            int uid = tryGetUid();
+
+            // Check if still has the default authentication key
+            // If yes, update to one derived from the uid and a new master secret
+            if(utils.authenticate(authenticationKey)){
+                logErrorAndInfo("Default key still used...");
+                utils.writePages(calcKey(uid, authenticationKey2), 0, 44, 4); // writes a new authentication key
+                logErrorAndInfo("The key has been updated");
+            }else{
+                logErrorAndInfo("The key has been updated earlier already");
+            }
+
             // Authenticate
             currentFailMsg = "Authentication failed";
-            tryAuthenticate();
+            tryAuthenticate(uid);
 
             // These set the read/write protection to all general + lock pages!
             writePage(42, new byte[] {(byte)3, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 03h,0,0,0
@@ -138,10 +156,6 @@ public class Ticket {
                 currentFailMsg = "Hmac title writing failed";
                 tryWritePage(HMAC_TITLE_PAGE, HMAC_TITLE);
             }
-
-            // Get UID
-            currentFailMsg = "UID getting failed";
-            int uid = tryGetUid();
 
             // Calculate new amount based on if expired or not
             currentFailMsg = "Expire read failed";
@@ -211,18 +225,17 @@ public class Ticket {
         utils.log("use()", true);
 
         String currentFailMsg = ""; // This message will be shown/logged if the following method(s) fail
-        int minutesLeft = 0;
         try { // NOTE: every method starting with 'try' can raise Exception
-            // Authenticate
-            currentFailMsg = "Authentication failed";
-            tryAuthenticate();
-
-            // ENABLE DUMP AGAIN BY UNCOMMENTING, do not remove
-            //writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
-
             // Get UID
             currentFailMsg = "UID getting failed";
             int uid = tryGetUid();
+
+            // Authenticate
+            currentFailMsg = "Authentication failed";
+            tryAuthenticate(uid);
+
+            // ENABLE DUMP AGAIN BY UNCOMMENTING, do not remove
+            //writePage(42, new byte[] {(byte)48, (byte)0x00, (byte)0x00, (byte)0x00}); // AUTH0 to 30h,0,0,0
 
             // Get usage count
             currentFailMsg = "Getting count failed";
@@ -261,7 +274,6 @@ public class Ticket {
                 currentFailMsg = "Tickets expired";
                 throw new Exception("Tickets expired");
             }
-            minutesLeft = bytesToInt(exprBytes) - currentDateMinInt();
 
             // Check if replay attack
             currentFailMsg = "Getting count failed";
@@ -297,7 +309,7 @@ public class Ticket {
             isValid = false;
             return false;
         }
-        logErrorAndInfo("Success! " + remainingUses + " tickets left, expires in " + (double) Math.round((minutesLeft / 60.0) * 100) / 100 + " hours");
+        logErrorAndInfo("Success! " + remainingUses + " tickets left, expires in " + String.format("%.2f", ((expiryTime - currentDateMinInt()) / 60.0)) + " hours");
         return true;
     }
 
@@ -305,8 +317,8 @@ public class Ticket {
      * CUSTOM IMPLEMENTATION BELOW
      */
 
-    private void tryAuthenticate() throws Exception {
-        if(!utils.authenticate(authenticationKey)){
+    private void tryAuthenticate(int uid) throws Exception {
+        if(!utils.authenticate(calcKey(uid, authenticationKey2))){
             throw new Exception("Auth failed");
         }
     }
@@ -362,10 +374,18 @@ public class Ticket {
     }
 
     private byte[] calcHmac(String lastCounter, int uid) {
-        byte[] hmacLong = macAlgorithm.generateMac(byteConcat(hmacKey, (lastCounter + VERSION_VALUE + uid).getBytes()));
+        byte[] hmacLong = macAlgorithm.generateMac(byteConcat(calcKey(uid, hmacKey2), (lastCounter + VERSION_VALUE + uid).getBytes()));
         byte[] hmac4bytes = new byte[4];
         System.arraycopy(hmacLong, 0, hmac4bytes, 0, 4);
         return hmac4bytes;
+    }
+
+    // calculates 16bit key based on the input
+    private byte[] calcKey(int uid, byte[] secret) {
+        byte[] hmacLong = macAlgorithm.generateMac(byteConcat(secret, ("" + uid).getBytes()));
+        byte[] hmac16bytes = new byte[16];
+        System.arraycopy(hmacLong, 0, hmac16bytes, 0, 16);
+        return hmac16bytes;
     }
 
     private int bytesToInt(byte[] bytes) {
