@@ -212,7 +212,7 @@ public class Ticket {
             tryWritePage(LAST_COUNTER_PAGE, lastTicketStringNew);
 
             // Save HMAC
-            byte[] hmac = calcHmac(lastTicketStringNew, uid);
+            byte[] hmac = calcHmac(lastTicketStringNew, uid, count);
             currentFailMsg = "HMAC writing failed";
             tryWriteBytes(HMAC_VALUE_PAGE, hmac);
 
@@ -262,6 +262,10 @@ public class Ticket {
             currentFailMsg = "Getting count failed";
             int count = tryGetCount();
 
+            // Get first
+            currentFailMsg = "First value reading failed";
+            int first = tryGetFirst();
+
             // Read how many uses left
             currentFailMsg = "Reading ticket amount failed";
             String lastTicketString = tryReadPage(LAST_COUNTER_PAGE);
@@ -275,7 +279,7 @@ public class Ticket {
 
             // Verify HMAC
             byte[] hmacStored = tryReadBytes(HMAC_VALUE_PAGE);
-            byte[] hmacCalc = calcHmac(lastTicketString, uid);
+            byte[] hmacCalc = calcHmac(lastTicketString, uid, first);
             if(!Arrays.equals(hmacStored, hmacCalc)) {
                 currentFailMsg = "HMAC does not add up";
                 throw new Exception("HMAC does not add up");
@@ -301,8 +305,6 @@ public class Ticket {
             // and then update expiryTime
             if (!hasStarted(exprBytes)) {
                 // Verify counter value is still the original
-                currentFailMsg = "First value reading failed";
-                int first = tryGetFirst();
                 if (first != count) {
                     currentFailMsg = "Counter values do not add up";
                     throw new Exception("Counter values do not add up");
@@ -310,7 +312,7 @@ public class Ticket {
                 // Get expiry time
                 expiryTime = currentDateMinInt() + EXPIRE_TIME_MIN;
                 // Write hmac2 based on the expiry
-                byte[] hmac2 = calcHmac2(lastTicketString, uid, expiryTime);
+                byte[] hmac2 = calcHmac2(lastTicketString, uid, first, expiryTime);
                 currentFailMsg = "HMAC2 writing failed";
                 tryWriteBytes(HMAC2_VALUE_PAGE, hmac2);
                 // Write expiry
@@ -320,7 +322,7 @@ public class Ticket {
                 expiryTime = bytesToInt(exprBytes);
                 // Verify HMAC2
                 byte[] hmac2Stored = tryReadBytes(HMAC2_VALUE_PAGE);
-                byte[] hmac2Calc = calcHmac2(lastTicketString, uid, expiryTime);
+                byte[] hmac2Calc = calcHmac2(lastTicketString, uid, first, expiryTime);
                 if(!Arrays.equals(hmac2Stored, hmac2Calc)) {
                     currentFailMsg = "HMAC2 does not add up";
                     throw new Exception("HMAC2 does not add up");
@@ -425,15 +427,15 @@ public class Ticket {
         tryWriteBytes(COUNT_PAGE, COUNT_ADD_ONE);
     }
 
-    private byte[] calcHmac(String lastCounter, int uid) {
-        byte[] hmacLong = macAlgorithm.generateMac(byteConcat(calcKey(uid, hmacKey2), (lastCounter + VERSION_VALUE + uid).getBytes()));
+    private byte[] calcHmac(String lastCounter, int uid, int first) {
+        byte[] hmacLong = macAlgorithm.generateMac(byteConcat(calcKey(uid, hmacKey2), (lastCounter + VERSION_VALUE + uid + first).getBytes()));
         byte[] hmac4bytes = new byte[4];
         System.arraycopy(hmacLong, 0, hmac4bytes, 0, 4);
         return hmac4bytes;
     }
 
-    private byte[] calcHmac2(String lastCounter, int uid, int expiryTime) {
-        byte[] hmacLong = macAlgorithm.generateMac(byteConcat(calcKey(uid, hmacKey2), (lastCounter + VERSION_VALUE + uid + expiryTime).getBytes()));
+    private byte[] calcHmac2(String lastCounter, int uid, int first, int expiryTime) {
+        byte[] hmacLong = macAlgorithm.generateMac(byteConcat(calcKey(uid, hmacKey2), (lastCounter + VERSION_VALUE + uid + first + expiryTime).getBytes()));
         byte[] hmac4bytes = new byte[4];
         System.arraycopy(hmacLong, 0, hmac4bytes, 0, 4);
         return hmac4bytes;
